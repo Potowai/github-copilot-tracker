@@ -1,6 +1,6 @@
 [package]
 name = "gct"
-version = "0.7.2"
+version = "0.8.0"
 description = "GCT (GitHub Copilot Tracker) with Claude Code usage"
 authors = ["you"]
 edition = "2021"

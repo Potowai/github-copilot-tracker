@@ -292,42 +292,6 @@ button:disabled {
   margin-bottom: 0 !important;
 }
 
-/* Usage source picker (GitHub Copilot / Claude) */
-.source-picker {
-  display: flex;
-  gap: 6px;
-  padding: 4px;
-  margin-bottom: 18px;
-  background: #f1f5f9;
-  border-radius: 10px;
-}
-
-.source-tab {
-  flex: 1;
-  padding: 8px 10px;
-  border-radius: 7px;
-  background: transparent;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.source-tab:hover:not(:disabled) {
-  transform: none;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.source-tab.active {
-  background: #ffffff;
-  color: #0f1720;
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(15, 23, 32, 0.12);
-}
-
-.claude-window + .claude-window {
-  margin-top: 16px;
-}
-
 .progress-fill.claude {
   background: linear-gradient(90deg, #d97757 0%, #e8a06b 100%);
 }
@@ -358,6 +322,7 @@ body {
 }
 
 .widget-shell {
+  position: relative;
   display: flex;
   width: 100%;
   height: 100%;
@@ -371,6 +336,52 @@ body {
   padding: 6px;
   background: transparent;
   container-type: size;
+  container-name: widget;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: end;
+  padding: 5px;
+  border-radius: 0 0 9px 0;
+  background: transparent;
+  color: rgba(23, 24, 15, 0.72);
+  opacity: 0.48;
+  cursor: nwse-resize;
+  user-select: none;
+  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
+}
+
+.resize-affordance {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.resize-affordance path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+.widget-shell:hover .resize-handle,
+.widget-shell:focus-within .resize-handle,
+.widget-shell.is-resizing .resize-handle {
+  opacity: 1;
+  background: rgba(254, 234, 152, 0.72);
+}
+
+.widget-shell.is-resizing .resize-handle {
+  transform: scale(1.08);
 }
 
 .usage-pill {
@@ -390,6 +401,23 @@ body {
   border-radius: 999px;
   background: #feea98;
   color: #17180f;
+}
+
+@container widget (max-width: 280px) {
+  .usage-pill {
+    width: min(100cqw, calc(100cqh * 2.625));
+    aspect-ratio: 2.625 / 1;
+  }
+}
+
+.widget-shell.is-resizing .usage-pill {
+  box-shadow: 0 0 0 1px rgba(201, 157, 33, 0.38), 0 6px 20px rgba(23, 24, 15, 0.14);
+}
+
+@media (hover: none) {
+  .widget-shell .resize-handle {
+    opacity: 0.7;
+  }
 }
 
 .pill-main {
@@ -555,7 +583,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .pill-controls,
-  .widget-control {
+  .widget-control,
+  .resize-handle {
     transition: none;
   }
 }
@@ -611,6 +640,29 @@ body {
   white-space: nowrap;
 }
 
+@container usage-pill (max-width: 280px) {
+  .pill-main {
+    gap: min(12cqh, 10px);
+    padding-inline: 4px;
+  }
+
+  .pill-icon {
+    width: 56cqh;
+    height: 56cqh;
+    flex-basis: 56cqh;
+  }
+
+  .pill-meter {
+    display: none;
+  }
+
+  .pill-percentage {
+    min-width: 0;
+    font-size: 46cqh;
+    letter-spacing: -1cqh;
+  }
+}
+
 
 
 .details-panel {
@@ -626,7 +678,7 @@ body {
   max-height: calc(100% - 148px);
   flex: 1 1 auto;
   overflow: auto;
-  border: 1px solid var(--details-border);
+  border: 0;
   border-radius: 20px;
   background: var(--details-surface);
   color: var(--details-ink);
@@ -667,26 +719,6 @@ body {
   color: var(--details-muted);
 }
 
-.details-panel .source-picker {
-  border: 1px solid var(--details-border);
-  border-radius: 12px;
-  background: var(--details-raised);
-}
-
-.details-panel .source-tab {
-  color: var(--details-muted);
-}
-
-.details-panel .source-tab:hover:not(:disabled) {
-  background: rgba(255, 248, 225, 0.8);
-}
-
-.details-panel .source-tab.active {
-  background: var(--details-accent);
-  color: var(--details-ink);
-  box-shadow: none;
-}
-
 .details-panel .progress-bar {
   height: 12px;
   border: 1px solid var(--details-border);
@@ -700,10 +732,6 @@ body {
 
 .details-panel .progress-fill.standard {
   background: #c49b2e;
-}
-
-.details-panel .progress-fill.claude {
-  background: #b77a35;
 }
 
 .details-panel .billing-info {

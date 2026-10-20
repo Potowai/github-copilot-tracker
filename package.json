@@ -2,12 +2,13 @@
   "name": "gct",
   "private": true,
   "description": "A Windows usage widget for GitHub Copilot AI credits and Claude Code, with customizable language and currency settings.",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "type": "module",
   "author": "Elio Struyf <elio@struyfconsulting.be> (https://www.eliostruyf.com)",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --test tests/*.test.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "postversion": "node sync-versions.cjs"

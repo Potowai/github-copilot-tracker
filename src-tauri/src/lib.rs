@@ -1,4 +1,8 @@
-use tauri::{image::Image as TauriImage, Emitter};
+use tauri::{
+    image::Image as TauriImage,
+    tray::{MouseButton, MouseButtonState, TrayIconEvent},
+    Emitter, Manager,
+};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 mod auth;
@@ -34,8 +38,15 @@ fn close_app() {
 
 #[tauri::command]
 fn show_window(window: tauri::Window) {
-    let _ = window.show();
-    let _ = window.set_focus();
+    if let Err(error) = window.unminimize() {
+        eprintln!("Failed to restore widget: {error}");
+    }
+    if let Err(error) = window.show() {
+        eprintln!("Failed to show widget: {error}");
+    }
+    if let Err(error) = window.set_focus() {
+        eprintln!("Failed to focus widget: {error}");
+    }
 }
 
 fn clear_pin_state(window: &tauri::Window) {
@@ -59,15 +70,18 @@ fn hide_window(window: tauri::Window) {
 fn set_tray_icon(app: tauri::AppHandle) -> Result<(), String> {
     // Use tauri's Image helper to build an Image from PNG/ICO bytes
     #[cfg(target_os = "windows")]
-    let bytes: &[u8] = include_bytes!("../tray-icon-dark.png");
+    let bytes: &[u8] = include_bytes!("../tray-icon-yellow.png");
     #[cfg(not(target_os = "windows"))]
     let bytes: &[u8] = include_bytes!("../tray-icon-light.png");
-    let img = TauriImage::from_bytes(bytes).map_err(|e| format!("failed to create tauri image: {}", e))?;
+    let img = TauriImage::from_bytes(bytes)
+        .map_err(|e| format!("failed to create tauri image: {}", e))?;
 
     let tray = app.tray_by_id("main").ok_or("Tray not found")?;
-    tray.set_icon(Some(img)).map_err(|e| format!("Failed to set tray icon: {e}"))?;
+    tray.set_icon(Some(img))
+        .map_err(|e| format!("Failed to set tray icon: {e}"))?;
     #[cfg(target_os = "macos")]
-    tray.set_icon_as_template(true).map_err(|e| format!("Failed to set icon as template: {e}"))?;
+    tray.set_icon_as_template(true)
+        .map_err(|e| format!("Failed to set icon as template: {e}"))?;
     Ok(())
 }
 
@@ -146,6 +160,26 @@ pub fn run() {
                     }
                 }
                 _ => {}
+            }
+        })
+        .on_tray_icon_event(|app, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(error) = window.unminimize() {
+                        eprintln!("Failed to restore widget from tray icon: {error}");
+                    }
+                    if let Err(error) = window.show() {
+                        eprintln!("Failed to show widget from tray icon: {error}");
+                    }
+                    if let Err(error) = window.set_focus() {
+                        eprintln!("Failed to focus widget from tray icon: {error}");
+                    }
+                }
             }
         })
         .run(tauri::generate_context!())

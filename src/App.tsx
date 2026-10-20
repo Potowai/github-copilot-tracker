@@ -82,8 +82,6 @@ function App() {
   // no sign-in flow here - only a status check and the usage fetch.
   const [claudeUsage, setClaudeUsage] = useState<ClaudeUsage | null>(null);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
-  const [claudeLoading, setClaudeLoading] = useState(false);
-  const [claudeError, setClaudeError] = useState<string | null>(null);
 
   const [refreshInterval, setRefreshInterval] = useState<number>(() => {
     const v = localStorage.getItem('refreshInterval');
@@ -108,6 +106,8 @@ function App() {
   );
   const [pinning, setPinning] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -191,16 +191,12 @@ function App() {
   }, []);
 
   const loadClaudeUsage = useCallback(async () => {
-    setClaudeLoading(true);
-    setClaudeError(null);
     try {
       const data = await fetchClaudeUsage();
       setClaudeUsage(data);
     } catch (err) {
       setClaudeUsage(null);
-      setClaudeError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setClaudeLoading(false);
+      console.debug('Could not fetch Claude usage:', err);
     }
   }, []);
 
@@ -410,6 +406,27 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      setIsResizing(true);
+      if (resizeTimeoutRef.current !== null) {
+        window.clearTimeout(resizeTimeoutRef.current);
+      }
+      resizeTimeoutRef.current = window.setTimeout(() => {
+        setIsResizing(false);
+        resizeTimeoutRef.current = null;
+      }, 160);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resizeTimeoutRef.current !== null) {
+        window.clearTimeout(resizeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const detailsHeight = Math.min(900, Math.max(compactSize.height, 680));
     void getCurrentWindow().setSize(
       new LogicalSize(compactSize.width, expanded ? detailsHeight : compactSize.height)
@@ -469,6 +486,7 @@ function App() {
             currencyEquivalent: premiumCurrencyEquivalent === null
               ? null
               : formatCurrencyAmount(premiumCurrencyEquivalent, currency, language),
+            billingCycleEnd: new Date(usage.billing_cycle_end).toLocaleDateString(localeForLanguage(language)),
             plan: copilotPlan,
             organizations: usage.organizations,
           }
@@ -482,25 +500,14 @@ function App() {
             })),
           }
         : null,
+      claudeSubscriptionType: claudeStatus?.subscription_type ?? null,
       claudeAvailable: claudeStatus?.available ?? false,
+      copilotAvailable: hasToken,
       language,
     }, handleRefresh);
-  }, [usage, copilotPlan, premiumCurrencyEquivalent, currency, language, claudeUsage, claudeStatus?.available, updateMenu, handleRefresh]);
+  }, [usage, copilotPlan, premiumCurrencyEquivalent, currency, language, claudeUsage, claudeStatus?.available, claudeStatus?.subscription_type, hasToken, updateMenu, handleRefresh]);
 
-  const sourcePicker = (
-    <div className="source-picker">
-      {(Object.keys(USAGE_SOURCE_LABELS) as Array<keyof typeof USAGE_SOURCE_LABELS>).map((option) => (
-        <button
-          key={option}
-          className={`source-tab ${source === option ? 'active' : ''}`}
-          onClick={() => setSource(option)}
-          disabled={option === 'claude' && !claudeStatus?.available}
-        >
-          {USAGE_SOURCE_LABELS[option]}
-        </button>
-      ))}
-    </div>
-  );
+
 
   const refreshControl = (
     <div className="refresh-control">
@@ -522,67 +529,10 @@ function App() {
   );
 
   const dashboard = (() => {
-  if (source === 'claude') {
-    return (
-      <div className="container">
-        <h1>{t('claudeUsage')}</h1>
-        {sourcePicker}
-
-        {claudeStatus && !claudeStatus.available && (
-          <div className="token-setup">
-            <p>{t('noClaudeLogin')}</p>
-            {claudeStatus?.reason && <div className="error">{claudeStatus.reason}</div>}
-          </div>
-        )}
-
-        {claudeStatus?.available && claudeStatus.expired && !claudeError && (
-          <div className="status">
-            {t('claudeLoginExpired')}
-          </div>
-        )}
-
-        {claudeLoading && <div className="status">{t('loading')}</div>}
-        {claudeError && <div className="error">{claudeError}</div>}
-
-        {claudeUsage && (
-          <>
-            <div className="usage-section">
-              {claudeUsage.windows.map((window) => (
-                <ProgressBar
-                  key={window.key}
-                  label={translateClaudeWindowLabel(language, window.key, window.label)}
-                  percent={window.percent}
-                  className="claude-window"
-                  variant="claude"
-                  language={language}
-                />
-              ))}
-            </div>
-
-            {refreshControl}
-
-            <div className="billing-info">
-              {claudePrimary?.resets_at && (
-                <p>{t('resets')}: {formatResetsAt(claudePrimary.resets_at, localeForLanguage(language), t('resetNow'))}</p>
-              )}
-            </div>
-          </>
-        )}
-
-        <div className="actions">
-          <button onClick={handleRefresh} disabled={claudeLoading} className="btn-primary">
-            {t('refresh')}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (!hasToken) {
     return (
       <div className="container">
         <h1>GCT</h1>
-        {sourcePicker}
         <div className="token-setup">
           <p>{t('enterGithubToken')}</p>
 
@@ -639,7 +589,6 @@ function App() {
   return (
     <div className="container">
       <h1>GCT</h1>
-      {sourcePicker}
 
       {loading && <div className="status">{t('loading')}</div>}
       {error && <div className="error">{error}</div>}
@@ -675,7 +624,7 @@ function App() {
       )}
 
       <div className="actions">
-        <button onClick={handleRefresh} disabled={loading} className="btn-primary">
+        <button onClick={() => loadUsage(token)} disabled={loading} className="btn-primary">
             {t('refresh')}
         </button>
         <button onClick={() => { localStorage.removeItem('github_token'); setHasToken(false); setUsage(null); }} className="btn-secondary">
@@ -719,6 +668,14 @@ function App() {
     window.addEventListener('mouseup', handleMouseUp, { once: true });
   };
 
+  const handleResizeDrag = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    void getCurrentWindow().startResizeDragging('SouthEast').catch((resizeError) => {
+      console.error('Failed to resize usage widget:', resizeError);
+    });
+  };
+
   const handleToggleAlwaysOnTop = async () => {
     const nextValue = !alwaysOnTop;
     setPinning(true);
@@ -759,7 +716,7 @@ function App() {
   };
 
   return (
-    <main className="widget-shell">
+    <main className={`widget-shell${isResizing ? ' is-resizing' : ''}`}>
       <div className="usage-pill" role="group" aria-label={t('usageWidget')} onMouseDown={handlePillDrag}>
         <button
           type="button"
@@ -891,6 +848,17 @@ function App() {
           {dashboard}
         </section>
       )}
+      <div
+        className="resize-handle"
+        role="img"
+        aria-label={t('resizeWidget')}
+        title={t('resizeWidget')}
+        onMouseDown={handleResizeDrag}
+      >
+        <svg className="resize-affordance" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M18 5 5 18M18 11l-7 7M18 0 0 18" />
+        </svg>
+      </div>
     </main>
   );
 }

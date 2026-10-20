@@ -1,0 +1,7 @@
+{
+  "app": {
+    "trayIcon": {
+      "iconPath": "tray-icon-yellow.png"
+    }
+  }
+}

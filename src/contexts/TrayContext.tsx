@@ -1,37 +1,10 @@
 import React, { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { TrayIcon } from '@tauri-apps/api/tray';
-import { Menu, MenuItemOptions, PredefinedMenuItemOptions, CheckMenuItemOptions } from '@tauri-apps/api/menu';
+import { Menu, type CheckMenuItemOptions } from '@tauri-apps/api/menu';
 import { invoke } from '@tauri-apps/api/core';
 import { USAGE_SOURCE_LABELS, type UsageSource } from '../types';
 import { translate, type Language, type TranslationKey } from '../i18n';
-
-type CopilotMenuInfo = {
-  premiumUsed: number;
-  premiumLimit: number;
-  premiumRemaining: number;
-  currencyEquivalent: string | null;
-  /** Friendly licence name, e.g. "Copilot Pro+". */
-  plan: string | null;
-  organizations: string[];
-};
-
-type ClaudeMenuWindow = {
-  label: string;
-  percent: number;
-  resetsAt: string | null;
-};
-
-type ClaudeMenuInfo = {
-  windows: ClaudeMenuWindow[];
-};
-
-type MenuState = {
-  copilot: CopilotMenuInfo | null;
-  claude: ClaudeMenuInfo | null;
-  language: Language;
-  /** A Claude Code login exists on this machine, so the source is selectable. */
-  claudeAvailable: boolean;
-};
+import { buildUsageSummaryMenuItems, type MenuState } from '../tray-menu';
 
 type TrayContextType = {
   setText: (text?: string, language?: Language) => Promise<void>;
@@ -118,54 +91,9 @@ export const TrayProvider: React.FC<{ tray: TrayIcon | null; children?: React.Re
       const targetTray = tray ?? await TrayIcon.getById('main');
       if (!targetTray) return;
 
-      const items: Array<MenuItemOptions | PredefinedMenuItemOptions | CheckMenuItemOptions> = [];
       const language = state?.language ?? 'en';
       const t = (key: TranslationKey) => translate(language, key);
-
-      // Usage for whichever source is currently selected.
-      if (source === 'copilot' && state?.copilot) {
-        const { premiumUsed, premiumLimit, premiumRemaining, currencyEquivalent, plan, organizations } = state.copilot;
-        items.push(
-          { id: 'usage_header', text: t('aiCredits'), enabled: false },
-          { id: 'usage_used', text: `  ${t('used')}: ${premiumUsed} / ${premiumLimit}`, enabled: false },
-          { id: 'usage_remaining', text: `  ${t('remaining')}: ${premiumRemaining}`, enabled: false }
-        );
-        if (currencyEquivalent) {
-          items.push({ id: 'usage_currency_equivalent', text: `  ${t('equivalentValue')}: ${currencyEquivalent}`, enabled: false });
-        }
-        if (plan) {
-          const org = organizations.length > 0 ? ` (${organizations.join(', ')})` : '';
-          items.push({ id: 'usage_plan', text: `  ${t('license')}: ${plan}${org}`, enabled: false });
-        }
-        items.push({ item: 'Separator' });
-      } else if (source === 'claude' && state?.claude) {
-        items.push({ id: 'usage_header', text: t('claudeUsage'), enabled: false });
-        state.claude.windows.forEach((window, index) => {
-          const reset = window.resetsAt ? `, ${t('resets')} ${window.resetsAt}` : '';
-          items.push({
-            id: `claude_window_${index}`,
-            text: `  ${window.label}: ${window.percent}%${reset}`,
-            enabled: false,
-          });
-        });
-        items.push({ item: 'Separator' });
-      }
-
-      // Source picker - radio behaviour via mutually exclusive check items.
-      items.push({ id: 'source_header', text: t('showUsageFor'), enabled: false });
-      (Object.keys(USAGE_SOURCE_LABELS) as UsageSource[]).forEach((option) => {
-        const isClaudeUnavailable = option === 'claude' && !state?.claudeAvailable;
-        items.push({
-          id: `source_${option}`,
-          text: isClaudeUnavailable
-            ? `${USAGE_SOURCE_LABELS[option]} (${t('notConnected')})`
-            : USAGE_SOURCE_LABELS[option],
-          checked: source === option,
-          // Selecting an unconnected source would only ever show a blank bar.
-          enabled: !isClaudeUnavailable,
-          action: () => setSource(option),
-        } as CheckMenuItemOptions);
-      });
+      const items = buildUsageSummaryMenuItems(state, source, USAGE_SOURCE_LABELS, t, setSource);
 
       items.push(
         { item: 'Separator' },

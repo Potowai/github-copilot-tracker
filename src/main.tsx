@@ -28,14 +28,9 @@ import { getStoredLanguage, translate } from './i18n';
     ],
   });
 
-  const options = {
-    id: 'main',
-    title: 'GCT',
-    menu,
-    menuOnLeftClick: true,
-  };
-
-  const tray = await TrayIcon.new(options);
+  const tray = await TrayIcon.getById('main');
+  if (!tray) throw new Error('Native tray icon "main" was not initialized');
+  await tray.setMenu(menu);
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>

@@ -11,7 +11,84 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-tauri-windows:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Build and publish Windows release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-pc-windows-msvc
+          tagName: ${{ github.ref_name }}
+          releaseName: "GCT ${{ github.ref_name }}"
+          releaseBody: |
+            ## GCT ${{ github.ref_name }}
+
+            - Compact, resizable usage pill with a high-contrast Windows tray icon.
+            - Tray click restores the widget; the native menu summarizes Copilot and Claude usage.
+            - Details stays focused on Copilot, with Claude usage available from the tray.
+            - Includes English/French resize feedback and Copilot billing-cycle reset information.
+
+            Download the Windows installer or portable archive below. The portable archive contains `gct.exe` and `WebView2Loader.dll`; Microsoft WebView2 Runtime is required.
+          releaseDraft: false
+
+      - name: Package portable Windows archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $releaseDir = 'src-tauri/target/x86_64-pc-windows-msvc/release'
+          $exe = Join-Path $releaseDir 'gct.exe'
+          if (-not (Test-Path $exe)) { throw "Missing Windows executable: $exe" }
+
+          $portableDir = Join-Path $env:RUNNER_TEMP 'GCT-portable'
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item $exe $portableDir
+
+          $loader = Get-ChildItem -Path $releaseDir -Filter 'WebView2Loader.dll' -File -Recurse | Select-Object -First 1
+          if (-not $loader) { throw 'WebView2Loader.dll was not produced by the Windows build.' }
+          Copy-Item $loader.FullName $portableDir
+
+          $runtime = Get-ChildItem -Path $releaseDir -Filter 'libunwind.dll' -File -Recurse | Select-Object -First 1
+          if ($runtime) { Copy-Item $runtime.FullName $portableDir }
+
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $archive = Join-Path $env:RUNNER_TEMP "GCT-$version-windows-x64.zip"
+          Compress-Archive -Path (Join-Path $portableDir '*') -DestinationPath $archive -Force
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          $checksum = Join-Path $env:RUNNER_TEMP "GCT-$version-windows-x64.zip.sha256"
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Path $checksum -Encoding ascii
+          gh release upload $env:GITHUB_REF_NAME $archive $checksum --repo $env:GITHUB_REPOSITORY --clobber
+
   build-tauri-macos:
+    if: ${{ vars.ENABLE_MAC_RELEASE == 'true' }}
+    needs: build-tauri-windows
     permissions:
       contents: write
     strategy:
@@ -87,8 +164,13 @@ jobs:
           # Without an explicit tagName the action logs "No releaseId or tagName
           # provided, skipping all uploads..." and the bundles never reach the release.
           tagName: ${{ github.ref_name }}
-          releaseName: "${{ github.ref_name }} release"
-          releaseBody: "See the assets to download this version and install."
+          releaseName: "GCT ${{ github.ref_name }}"
+          releaseBody: |
+            ## GCT ${{ github.ref_name }}
+
+            - Compact, resizable usage pill with a high-contrast tray icon.
+            - Tray click restores the widget; the native menu summarizes usage.
+            - Includes localized resize feedback and billing-cycle information.
           releaseDraft: false
 
       - name: Upload artifacts
