@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to add the portable archive to
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,6 +46,7 @@ jobs:
         run: npm test
 
       - name: Build and publish Windows release
+        if: ${{ github.event_name == 'push' }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,8 +65,15 @@ jobs:
             Download the Windows installer or portable archive below. The portable archive contains `gct.exe` and `WebView2Loader.dll`; Microsoft WebView2 Runtime is required.
           releaseDraft: false
 
+      - name: Build Windows binary for portable archive
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: npm run tauri -- build --no-bundle --target x86_64-pc-windows-msvc
+
       - name: Package portable Windows archive
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GCT_RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         run: |
           $ErrorActionPreference = 'Stop'
           $releaseDir = 'src-tauri/target/x86_64-pc-windows-msvc/release'
@@ -78,13 +91,13 @@ jobs:
           $runtime = Get-ChildItem -Path $releaseDir -Filter 'libunwind.dll' -File -Recurse | Select-Object -First 1
           if ($runtime) { Copy-Item $runtime.FullName $portableDir }
 
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $version = $env:GCT_RELEASE_TAG -replace '^v', ''
           $archive = Join-Path $env:RUNNER_TEMP "GCT-$version-windows-x64.zip"
           Compress-Archive -Path (Join-Path $portableDir '*') -DestinationPath $archive -Force
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           $checksum = Join-Path $env:RUNNER_TEMP "GCT-$version-windows-x64.zip.sha256"
           "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Path $checksum -Encoding ascii
-          gh release upload $env:GITHUB_REF_NAME $archive $checksum --repo $env:GITHUB_REPOSITORY --clobber
+          gh release upload $env:GCT_RELEASE_TAG $archive $checksum --repo $env:GITHUB_REPOSITORY --clobber
 
   build-tauri-macos:
     if: ${{ vars.ENABLE_MAC_RELEASE == 'true' }}
